@@ -1,0 +1,21 @@
+# Build output
+dist/
+build/
+*.spec
+
+# LibreOffice Portable (large binary bundle)
+libre/
+
+# Misc
+nul
+__pycache__/
+*.pyc
+
+# User media files
+media/
+!media/.gitkeep
+
+# Local environment
+venv/
+.env
+*.egg-info/

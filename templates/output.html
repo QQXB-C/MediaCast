@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>媒体输出</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, "Microsoft YaHei", sans-serif; }
+
+#stage { position: relative; width: 100%; height: 100%; }
+.screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .25s ease; z-index: 1; }
+.screen.active { opacity: 1; z-index: 2; }
+.screen img, .screen video, .screen iframe { max-width: 100%; max-height: 100%; object-fit: contain; border: none; }
+.screen video { width: 100%; height: 100%; }
+.screen iframe { width: 100%; height: 100%; }
+.screen audio { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 600px; opacity: .8; }
+
+#background { position: fixed; inset: 0; background: #000; background-size: cover; background-position: center; background-repeat: no-repeat; z-index: 0; }
+#placeholder { position: absolute; bottom: 20px; left: 20px; color: #444; z-index: 1; font-size: 13px; }
+
+#overlay { position: fixed; bottom: 0; left: 0; right: 0; padding: 16px 24px; background: linear-gradient(transparent, rgba(0,0,0,.8)); opacity: 0; transition: opacity .4s; pointer-events: none; z-index: 10; display: flex; align-items: center; gap: 12px; }
+#overlay.show { opacity: 1; }
+#overlay .filename { font-size: 14px; color: #ccc; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#overlay .status { font-size: 12px; color: #888; }
+
+#fullscreen-btn { position: fixed; top: 16px; right: 16px; padding: 8px 16px; border: 1px solid #555; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 13px; z-index: 20; transition: background .2s; }
+#fullscreen-btn:hover { background: rgba(255,255,255,.1); }
+
+body.cursor-hide, body.cursor-hide * { cursor: none !important; }
+
+#unlock-overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
+#unlock-overlay .icon { font-size: 72px; margin-bottom: 20px; }
+#unlock-overlay .text { font-size: 22px; color: #ccc; margin-bottom: 8px; }
+#unlock-overlay .hint { font-size: 14px; color: #666; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="unlock-overlay">
+  <div class="icon">▶</div>
+  <div class="text">点击此处启用播放</div>
+  <div class="hint">Click to enable audio/video playback</div>
+</div>
+
+<div id="background"></div>
+
+<div id="stage">
+  <div id="placeholder">⏹ 等待播放...</div>
+  <div class="screen" id="screenA"></div>
+  <div class="screen" id="screenB"></div>
+</div>
+
+
+<div id="overlay">
+  <span class="filename" id="overlayFilename">无</span>
+  <span class="status" id="overlayStatus">空闲</span>
+</div>
+
+<button id="fullscreen-btn" onclick="goFullscreen()">⛶ 全屏</button>
+
+<script>
+let audioUnlocked = false;
+let currentMedia = null;
+let currentType = null;
+let mediaEl = null;
+let overlayTimer = null;
+let activeScreen = 'A';
+let pptxState = { slideIndex: 0, slideCount: 0, baseUrl: '' };
+let progressTimer = null;
+let backgroundFile = null;
+let bgVisible = true;
+
+let cursorTimer = null;
+function resetCursorHide() {
+  document.body.classList.remove('cursor-hide');
+  clearTimeout(cursorTimer);
+  if (document.fullscreenElement) {
+    cursorTimer = setTimeout(() => document.body.classList.add('cursor-hide'), 3000);
+  }
+}
+document.addEventListener('mousemove', resetCursorHide);
+document.addEventListener('fullscreenchange', resetCursorHide);
+
+const unlockOverlay = document.getElementById('unlock-overlay');
+const placeholder = document.getElementById('placeholder');
+const screenA = document.getElementById('screenA');
+const screenB = document.getElementById('screenB');
+const overlay = document.getElementById('overlay');
+const overlayName = document.getElementById('overlayFilename');
+const overlayStatus = document.getElementById('overlayStatus');
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    audioUnlocked = true;
+  } catch {}
+  unlockOverlay.classList.add('hidden');
+}
+
+unlockOverlay.addEventListener('click', unlockAudio);
+document.addEventListener('keydown', unlockAudio);
+document.addEventListener('touchstart', unlockAudio);
+
+function goFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen();
+  }
+}
+
+document.addEventListener('fullscreenchange', () => {
+  document.getElementById('fullscreen-btn').textContent =
+    document.fullscreenElement ? '✕ 退出全屏' : '⛶ 全屏';
+});
+
+function showOverlay(name, status) {
+  overlayName.textContent = name;
+  overlayStatus.textContent = status;
+  overlay.classList.add('show');
+  clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(() => overlay.classList.remove('show'), 3000);
+}
+
+document.addEventListener('mousemove', () => {
+  overlay.classList.add('show');
+  clearTimeout(overlayTimer);
+  overlayTimer = setTimeout(() => overlay.classList.remove('show'), 3000);
+});
+
+function getActiveScreen() {
+  return activeScreen === 'A' ? screenA : screenB;
+}
+
+function getInactiveScreen() {
+  return activeScreen === 'A' ? screenB : screenA;
+}
+
+function destroyMedia(el) {
+  stopProgressReporter();
+  const v = el.querySelector('video') || el.querySelector('audio');
+  if (v) {
+    v.pause();
+    v.src = '';
+    v.load();
+  }
+}
+
+function stopProgressReporter() {
+  if (progressTimer) {
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+}
+
+function startProgressReporter(el, filename) {
+  stopProgressReporter();
+  progressTimer = setInterval(() => {
+    if (!el || !el.duration || el.paused === undefined) return;
+    fetch('/api/progress', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        currentTime: el.currentTime || 0,
+        duration: el.duration || 0,
+        paused: el.paused,
+        file: filename || '',
+      }),
+    });
+  }, 500);
+}
+
+function showScreen(el) {
+  el.classList.add('active');
+  if (el === screenA) {
+    screenB.classList.remove('active');
+  } else {
+    screenA.classList.remove('active');
+  }
+  activeScreen = el === screenA ? 'A' : 'B';
+}
+
+function preloadAndShow(data) {
+  const active = getActiveScreen();
+  destroyMedia(active);
+  const inactive = getInactiveScreen();
+  inactive.innerHTML = '';
+  placeholder.classList.add('hidden');
+
+  const fileUrl = data.path;
+  currentMedia = data.file;
+  currentType = data.type;
+  overlayName.textContent = data.file;
+
+  if (data.type === 'image') {
+    const img = document.createElement('img');
+    img.alt = data.file;
+    const preloader = new Image();
+    preloader.onload = () => {
+      img.src = preloader.src;
+      inactive.appendChild(img);
+      showScreen(inactive);
+      mediaEl = img;
+      showOverlay(data.file, '图片');
+    };
+    preloader.onerror = () => {
+      img.src = fileUrl;
+      inactive.appendChild(img);
+      showScreen(inactive);
+      mediaEl = img;
+    };
+    preloader.src = fileUrl;
+  } else if (data.type === 'video') {
+    const vid = document.createElement('video');
+    vid.src = fileUrl;
+    vid.controls = false;
+    vid.muted = false;
+    vid.autoplay = true;
+    vid.playsinline = true;
+    inactive.appendChild(vid);
+    showScreen(inactive);
+    mediaEl = vid;
+    vid.addEventListener('loadedmetadata', () => {
+      const p = vid.play();
+      if (p) p.catch(e => {
+        if (e.name === 'NotAllowedError') {
+          showOverlay(data.file, '影片待点击启用');
+        }
+      });
+      startProgressReporter(vid, data.file);
+    });
+    showOverlay(data.file, '视频');
+  } else if (data.type === 'audio') {
+    const aud = document.createElement('audio');
+    aud.src = fileUrl;
+    aud.controls = false;
+    aud.autoplay = true;
+    inactive.appendChild(aud);
+    if (!backgroundFile) {
+      const visual = document.createElement('div');
+      visual.style.cssText = 'position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:100px;opacity:.25;pointer-events:none;';
+      visual.textContent = '🎵';
+      inactive.appendChild(visual);
+    }
+    showScreen(inactive);
+    mediaEl = aud;
+    aud.addEventListener('loadedmetadata', () => {
+      const p = aud.play();
+      if (p) p.catch(e => {
+        if (e.name === 'NotAllowedError') {
+          showOverlay(data.file, '音频待点击启用');
+        }
+      });
+      startProgressReporter(aud, data.file);
+    });
+    showOverlay(data.file, '音频');
+  } else if (data.type === 'document') {
+    if (data.slideCount) {
+      pptxState.slideCount = data.slideCount || 0;
+      pptxState.slideIndex = data.slideIndex || 0;
+      const stem = data.file.replace(/\.(pptx|ppt|pdf)$/i, '');
+      pptxState.baseUrl = `/pptx_cache/${encodeURIComponent(stem)}/slide_`;
+      const img = document.createElement('img');
+      const url = data.slideImage || (pptxState.baseUrl + '0.png');
+      const preloader = new Image();
+      preloader.onload = () => {
+        img.src = preloader.src;
+        inactive.appendChild(img);
+        showScreen(inactive);
+        mediaEl = img;
+        const label = data.subtype === 'ppt' ? 'PPT' : 'PDF';
+        showOverlay(data.file, `${label} ${pptxState.slideIndex + 1}/${pptxState.slideCount}`);
+      };
+      preloader.onerror = () => {
+        inactive.innerHTML = '<div style="color:#f44;font-size:18px">幻灯片加载失败</div>';
+        showScreen(inactive);
+      };
+      preloader.src = url;
+    } else {
+      const embed = document.createElement('embed');
+      embed.src = fileUrl;
+      embed.type = 'application/pdf';
+      embed.style.cssText = 'width:100%;height:100%;border:none;';
+      inactive.appendChild(embed);
+      showScreen(inactive);
+      mediaEl = embed;
+      showOverlay(data.file, '文档');
+    }
+  }
+}
+
+function pauseMedia() {
+  if (!mediaEl) return;
+  if (currentType === 'video' || currentType === 'audio') {
+    if (mediaEl.paused) {
+      const p = mediaEl.play();
+      if (p) p.catch(() => {});
+      showOverlay(currentMedia, '继续');
+    } else {
+      mediaEl.pause();
+      showOverlay(currentMedia, '已暂停');
+    }
+  }
+}
+
+function setBackgroundImage(file) {
+  backgroundFile = file;
+  const el = document.getElementById('background');
+  if (file) {
+    el.style.backgroundImage = `url(/media/${encodeURI(file)})`;
+    bgVisible = true;
+    el.style.display = '';
+  } else {
+    el.style.backgroundImage = 'none';
+    el.style.background = '#000';
+    el.style.display = 'none';
+  }
+}
+
+function stopMedia() {
+  stopProgressReporter();
+  destroyMedia(screenA);
+  destroyMedia(screenB);
+  screenA.innerHTML = '';
+  screenA.classList.remove('active');
+  screenB.innerHTML = '';
+  screenB.classList.remove('active');
+  activeScreen = 'A';
+  placeholder.classList.remove('hidden');
+  currentMedia = null;
+  currentType = null;
+  mediaEl = null;
+  pptxState = { slideIndex: 0, slideCount: 0, baseUrl: '' };
+  if (!backgroundFile) {
+    showOverlay('已停止', '');
+  } else {
+    showOverlay('已停止', '背景图放映中');
+  }
+}
+
+function connectSSE() {
+  const evtSource = new EventSource('/events');
+  evtSource.onmessage = function(event) {
+    try {
+      const cmd = JSON.parse(event.data);
+      handleCommand(cmd);
+    } catch {}
+  };
+  evtSource.onerror = function() {
+    setTimeout(connectSSE, 1000);
+  };
+}
+
+function handleCommand(cmd) {
+  switch (cmd.action) {
+    case 'play': preloadAndShow(cmd); break;
+    case 'stop': stopMedia(); break;
+    case 'pause': pauseMedia(); break;
+    case 'seek':
+      if (mediaEl && (currentType === 'video' || currentType === 'audio')) {
+        mediaEl.currentTime = cmd.time;
+      }
+      break;
+    case 'background_set':
+      setBackgroundImage(cmd.file);
+      break;
+    case 'background_clear':
+      setBackgroundImage(null);
+      break;
+    case 'background_toggle':
+      bgVisible = !bgVisible;
+      document.getElementById('background').style.display = bgVisible ? '' : 'none';
+      showOverlay(currentMedia || '演示', bgVisible ? '背景已显示' : '背景已隐藏');
+      break;
+    case 'pptx_nav':
+      if (pptxState.slideCount === 0 || !pptxState.baseUrl) break;
+      const n = cmd.slideIndex;
+      if (n < 0 || n >= pptxState.slideCount) break;
+      pptxState.slideIndex = n;
+      const slideUrl = pptxState.baseUrl + n + '.png';
+      const preloader = new Image();
+      preloader.onload = () => {
+        if (mediaEl && mediaEl.tagName === 'IMG') {
+          mediaEl.src = preloader.src;
+        }
+        showOverlay(currentMedia || '文档', `幻灯片 ${n + 1}/${pptxState.slideCount}`);
+      };
+      preloader.src = slideUrl;
+      break;
+  }
+}
+
+connectSSE();
+</script>
+</body>
+</html>

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>媒体控制器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+.container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 1px solid #333; margin-bottom: 16px; }
+header h1 { font-size: 22px; font-weight: 600; }
+.header-actions { display: flex; gap: 8px; }
+.header-actions button { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all .2s; }
+.btn-refresh { background: #16213e; color: #eee; }
+.btn-refresh:hover { background: #1a2a4e; }
+.btn-folder { background: #0f3460; color: #eee; }
+.btn-folder:hover { background: #144a7a; }
+.btn-upload { background: #533483; color: #fff; }
+.btn-upload:hover { background: #6b44a8; }
+
+.filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filter-btn { padding: 6px 16px; border: 1px solid #444; border-radius: 20px; background: transparent; color: #aaa; cursor: pointer; font-size: 13px; transition: all .2s; }
+.filter-btn:hover { border-color: #888; color: #fff; }
+.filter-btn.active { background: #0f3460; border-color: #0f3460; color: #fff; }
+.view-btn { padding: 4px 8px; border: 1px solid #444; border-radius: 4px; background: transparent; color: #666; cursor: pointer; font-size: 16px; line-height: 1; transition: all .2s; margin-left: auto; }
+.view-btn:hover { border-color: #888; color: #fff; }
+.view-btn.active { background: #0f3460; border-color: #0f3460; color: #fff; }
+
+.now-playing { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #16213e; border-radius: 8px; margin-bottom: 16px; min-height: 48px; }
+.now-playing .indicator { width: 10px; height: 10px; border-radius: 50%; background: #555; flex-shrink: 0; }
+.now-playing .indicator.active { background: #4ade80; box-shadow: 0 0 8px #4ade8033; }
+.now-playing .label { color: #aaa; font-size: 13px; }
+.now-playing .filename { color: #fff; font-weight: 500; flex: 1; }
+.control-btns { display: flex; gap: 6px; }
+.control-btns button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all .2s; }
+.btn-stop { background: #dc2626; color: #fff; }
+.btn-stop:hover { background: #b91c1c; }
+.btn-pause { background: #2563eb; color: #fff; }
+.btn-pause:hover { background: #1d4ed8; }
+
+.drop-zone { border: 2px dashed #444; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 16px; color: #666; cursor: pointer; transition: all .2s; }
+.drop-zone:hover, .drop-zone.dragover { border-color: #6b44a8; background: #1a1a3e; color: #aaa; }
+
+.media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.media-grid.list { display: flex; flex-direction: column; gap: 6px; }
+.media-grid.list .media-card { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid transparent; transform: none; }
+.media-grid.list .media-card:hover { border-color: #4f46e5; transform: none; }
+.media-grid.list .media-card.playing { border-color: #4ade80; }
+.media-grid.list .media-card .thumb { width: 90px; height: 51px; aspect-ratio: auto; flex-shrink: 0; border-radius: 4px; font-size: 20px; }
+.media-grid.list .media-card .info { flex: 1; padding: 0; }
+.media-grid.list .media-card .info .name { font-size: 13px; }
+.media-grid.list .media-card .info .type { font-size: 11px; }
+.media-grid.list .media-card .delete-btn,
+.media-grid.list .media-card .bg-btn { position: static; display: flex; }
+.media-grid.list .media-card .bg-btn { font-size: 11px; padding: 2px 6px; }
+
+.media-card { position: relative; background: #16213e; border-radius: 8px; overflow: hidden; cursor: pointer; transition: all .2s; border: 2px solid transparent; }
+.media-card:hover { border-color: #4f46e5; transform: translateY(-2px); }
+.media-card.playing { border-color: #4ade80; box-shadow: 0 0 12px #4ade8033; }
+.media-card .thumb { width: 100%; aspect-ratio: 16/9; background: #0f1a30; display: flex; align-items: center; justify-content: center; font-size: 36px; overflow: hidden; }
+.media-card .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.media-card .info { padding: 8px 10px; }
+.media-card .info .name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.media-card .info .type { font-size: 11px; color: #666; margin-top: 2px; }
+.media-card .delete-btn { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: none; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 14px; display: none; align-items: center; justify-content: center; line-height: 1; }
+.media-card:hover .delete-btn { display: flex; }
+.media-card .delete-btn:hover { background: #dc2626; }
+.media-card .bg-btn { position: absolute; top: 4px; left: 4px; padding: 2px 6px; border: none; border-radius: 4px; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 11px; display: none; align-items: center; gap: 2px; line-height: 1.4; }
+.media-card:hover .bg-btn { display: flex; }
+.media-card .bg-btn:hover { background: #2563eb; }
+
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 24px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
+#previewPanel { position: fixed; bottom: 80px; right: 16px; width: 240px; border-radius: 8px; overflow: hidden; background: #0f1a30; border: 1px solid #333; z-index: 100; transition: transform .25s ease, opacity .25s ease; }
+#previewPanel.preview-hidden { transform: translateY(20px); opacity: 0; pointer-events: none; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: #16213e; font-size: 12px; color: #888; }
+.preview-header button { background: none; border: none; color: #888; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+.preview-header button:hover { color: #fff; }
+.preview-body { width: 100%; aspect-ratio: 16/9; background: #0a0e1a; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.preview-body img, .preview-body video { width: 100%; height: 100%; object-fit: contain; }
+.preview-placeholder { color: #444; font-size: 13px; }
+
+#uploadInput { display: none; }
+
+.search-bar { margin-bottom: 12px; }
+.search-bar input { width: 100%; padding: 8px 14px; border: 1px solid #444; border-radius: 6px; background: #16213e; color: #eee; font-size: 14px; outline: none; }
+.search-bar input:focus { border-color: #4f46e5; }
+.search-bar input::placeholder { color: #666; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <h1>📺 媒体控制器</h1>
+      <span id="clockDisplay" style="font-size:18px;font-weight:600;color:#818cf8;font-variant-numeric:tabular-nums;">00:00:00</span>
+      <span id="bgIndicator" style="font-size:12px;color:#888;display:none;">🖼 <span id="bgName"></span> <a href="#" onclick="clearBackground()" style="color:#dc2626;text-decoration:none;">✕</a></span>
+    </div>
+    <div class="header-actions">
+      <button class="btn-refresh" onclick="loadMedia()">🔄 刷新</button>
+      <button class="btn-folder" onclick="openFolder()">📂 打开文件夹</button>
+      <button class="btn-upload" onclick="document.getElementById('uploadInput').click()">📤 上传</button>
+    </div>
+  </header>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜索文件..." oninput="renderMedia()">
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-filter="all">全部</button>
+    <button class="filter-btn" data-filter="image">🖼 图片</button>
+    <button class="filter-btn" data-filter="video">🎬 视频</button>
+    <button class="filter-btn" data-filter="audio">🎵 音频</button>
+    <button class="filter-btn" data-filter="document">📄 文档</button>
+    <button class="view-btn active" id="viewGrid" onclick="setView('grid')" title="图标视图">▦</button>
+    <button class="view-btn" id="viewList" onclick="setView('list')" title="列表视图">☰</button>
+  </div>
+
+  <div class="now-playing" id="nowPlaying">
+    <span class="indicator" id="playIndicator"></span>
+    <span class="label">▶ 正在放映:</span>
+    <span class="filename" id="currentFile">无</span>
+    <div class="control-btns">
+      <button class="btn-stop" onclick="sendStop()">⏹ 停止</button>
+      <button class="btn-pause" id="btnPause" onclick="sendPause()">⏸ 暂停</button>
+      <button id="btnBgToggle" onclick="toggleBackground()" style="padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;background:#2563eb;color:#fff;transition:all .2s;">🖼 背景</button>
+      <button id="btnPreview" onclick="togglePreview()" style="padding:6px 10px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:#374151;color:#fff;">📺</button>
+    </div>
+  </div>
+
+  <div class="progress-bar-wrap" id="progressWrap" style="display:none;margin-bottom:12px;padding:8px 16px;background:#16213e;border-radius:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="progressTime" style="color:#aaa;font-size:12px;white-space:nowrap;min-width:60px;">0:00</span>
+      <div id="progressTrack" style="flex:1;height:6px;background:#333;border-radius:3px;cursor:pointer;position:relative;">
+        <div id="progressFill" style="width:0%;height:100%;background:#4f46e5;border-radius:3px;transition:width .1s linear;"></div>
+        <div id="progressThumb" style="position:absolute;top:50%;left:0%;width:14px;height:14px;background:#818cf8;border-radius:50%;transform:translate(-50%,-50%);transition:left .1s linear;box-shadow:0 0 4px rgba(129,140,248,.5);"></div>
+      </div>
+      <span id="progressDuration" style="color:#aaa;font-size:12px;white-space:nowrap;min-width:60px;text-align:right;">0:00</span>
+    </div>
+  </div>
+
+  <div class="pptx-nav" id="pptxNav" style="margin-bottom:12px;padding:10px 16px;background:#0f1a30;border-radius:8px;display:none;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="color:#888;font-size:13px;">📄 文档放映</span>
+    <button class="btn-nav" onclick="pptxPrev()" style="padding:6px 14px;border:none;border-radius:4px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;">◀ 上一页</button>
+    <span id="pptxPage" style="color:#eee;font-size:14px;font-weight:500;">1 / 1</span>
+    <button class="btn-nav" onclick="pptxNext()" style="padding:6px 14px;border:none;border-radius:4px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;">下一页 ▶</button>
+    <input type="number" id="pptxGoto" min="1" style="width:60px;padding:4px 8px;border:1px solid #444;border-radius:4px;background:#16213e;color:#eee;font-size:13px;text-align:center;" placeholder="页码">
+    <button onclick="pptxGoTo()" style="padding:6px 12px;border:1px solid #555;border-radius:4px;background:transparent;color:#aaa;cursor:pointer;font-size:13px;">跳转</button>
+  </div>
+
+  <div id="uploadProgressWrap" style="display:none;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:#aaa;margin-bottom:4px;">
+      <span id="uploadStatus">正在上传...</span>
+      <span id="uploadPercent">0%</span>
+    </div>
+    <div style="width:100%;height:6px;background:#333;border-radius:3px;overflow:hidden;">
+      <div id="uploadProgressBar" style="width:0%;height:100%;background:#4f46e5;border-radius:3px;transition:width .15s ease;"></div>
+    </div>
+  </div>
+
+  <div id="pptDialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;">
+    <div style="background:#1a1a2e;border:1px solid #444;border-radius:12px;padding:32px;max-width:420px;width:90%;text-align:center;">
+      <div style="font-size:40px;margin-bottom:12px;">📽</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:8px;">检测到 PPT 文件</div>
+      <div style="font-size:13px;color:#aaa;margin-bottom:20px;">请选择处理方式：</div>
+      <button id="pptBtnHave" style="display:block;width:100%;padding:12px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;cursor:pointer;margin-bottom:10px;">我安装了 Office</button>
+      <button id="pptBtnNot" style="display:block;width:100%;padding:12px;border:1px solid #555;border-radius:8px;background:transparent;color:#aaa;font-size:15px;cursor:pointer;margin-bottom:10px;">我没有安装 Office</button>
+      <button id="pptBtnCancel" style="display:block;width:100%;padding:8px;border:none;border-radius:8px;background:transparent;color:#666;font-size:13px;cursor:pointer;">取消上传</button>
+    </div>
+  </div>
+
+  <div class="drop-zone" id="dropZone">📁 拖拽文件到此处上传，或点击上传按钮</div>
+  <input type="file" id="uploadInput" multiple>
+
+  <div class="media-grid" id="mediaGrid"></div>
+</div>
+
+<div id="previewPanel">
+  <div class="preview-header">
+    <span>📺 预览</span>
+    <button onclick="togglePreview()">−</button>
+  </div>
+  <div class="preview-body" id="previewBody">
+    <div class="preview-placeholder">无内容</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let allMedia = [];
+let currentFilter = 'all';
+let currentPlaying = null;
+let pptxState = { total: 0, current: 0 };
+let isPaused = false;
+let bgVisible = true;
+let previewVisible = true;
+let previewBaseUrl = '';
+let viewMode = 'grid';
+
+function setView(mode) {
+  viewMode = mode;
+  document.getElementById('mediaGrid').className = 'media-grid' + (mode === 'list' ? ' list' : '');
+  document.getElementById('viewGrid').classList.toggle('active', mode === 'grid');
+  document.getElementById('viewList').classList.toggle('active', mode === 'list');
+}
+
+function togglePreview() {
+  previewVisible = !previewVisible;
+  document.getElementById('previewPanel').classList.toggle('preview-hidden');
+  document.getElementById('btnPreview').style.background = previewVisible ? '#374151' : '#4b5563';
+}
+
+function updatePreview(src, type) {
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '';
+  if (!src) {
+    body.innerHTML = '<div class="preview-placeholder">无内容</div>';
+    return;
+  }
+  if (type === 'video') {
+    const vid = document.createElement('video');
+    vid.src = src;
+    vid.muted = true;
+    vid.autoplay = true;
+    vid.loop = true;
+    vid.playsinline = true;
+    body.appendChild(vid);
+  } else {
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    body.appendChild(img);
+  }
+}
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockDisplay').textContent =
+    String(now.getHours()).padStart(2,'0') + ':' +
+    String(now.getMinutes()).padStart(2,'0') + ':' +
+    String(now.getSeconds()).padStart(2,'0');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+async function loadMedia() {
+  try {
+    const res = await fetch('/api/media');
+    allMedia = await res.json();
+    renderMedia();
+  } catch { toast('加载媒体列表失败'); }
+}
+
+function renderMedia() {
+  const query = document.getElementById('searchInput').value.toLowerCase();
+  let filtered = allMedia;
+  if (currentFilter !== 'all') filtered = filtered.filter(m => m.type === currentFilter);
+  if (query) filtered = filtered.filter(m => m.name.toLowerCase().includes(query));
+
+  const grid = document.getElementById('mediaGrid');
+  grid.innerHTML = '';
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px 0;color:#555">暂无文件，请将媒体文件放入 media 文件夹</div>';
+    return;
+  }
+
+  for (const m of filtered) {
+    const card = document.createElement('div');
+    card.className = 'media-card' + (currentPlaying === m.path ? ' playing' : '');
+    card.dataset.path = m.path;
+
+    const iconMap = { image: '🖼', video: '🎬', audio: '🎵', document: '📄' };
+    const icon = iconMap[m.type] || '📁';
+    let thumbHtml = `<div class="thumb">${icon}</div>`;
+
+    if (m.type === 'image') {
+      thumbHtml = `<div class="thumb"><img src="/media/${encodeURI(m.path)}" loading="lazy" onerror="this.style.display='none'"></div>`;
+    }
+
+    const bgBtn = m.type === 'image'
+      ? `<button class="bg-btn" data-path="${m.path}" onclick="setBackground(event, '${m.path}')">🖼 背景</button>`
+      : '';
+    card.innerHTML = thumbHtml +
+      `<div class="info">
+        <div class="name">${m.name}</div>
+        <div class="type">${m.type} · ${m.subtype}</div>
+      </div>
+      ${bgBtn}
+      <button class="delete-btn" data-path="${m.path}" onclick="deleteFile(event, '${m.path}')">×</button>`;
+
+    card.addEventListener('click', () => playFile(m));
+    grid.appendChild(card);
+  }
+}
+
+function playFile(media) {
+  fetch('/api/play', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(media),
+  }).then(r => r.json()).then(data => {
+    if (data.error) {
+      toast(data.error);
+      document.getElementById('pptxNav').style.display = 'none';
+    }
+  }).catch(() => {});
+  document.getElementById('pptxNav').style.display = 'none';
+  currentPlaying = media.path;
+  document.getElementById('currentFile').textContent = media.name;
+  document.getElementById('playIndicator').className = 'indicator active';
+  const isMedia = media.type === 'video' || media.type === 'audio';
+  document.getElementById('btnPause').style.display = isMedia ? 'inline-block' : 'none';
+  if (!isMedia) document.getElementById('progressWrap').style.display = 'none';
+  renderMedia();
+}
+
+function sendStop() {
+  fetch('/api/stop', { method: 'POST' });
+  currentPlaying = null;
+  document.getElementById('currentFile').textContent = '无';
+  document.getElementById('playIndicator').className = 'indicator';
+  document.getElementById('pptxNav').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'none';
+  isPaused = false;
+  document.getElementById('btnPause').textContent = '⏸ 暂停';
+  document.getElementById('btnPause').style.display = 'inline-block';
+  renderMedia();
+}
+
+function sendPause() {
+  fetch('/api/pause', { method: 'POST' });
+  isPaused = !isPaused;
+  document.getElementById('btnPause').textContent = isPaused ? '▶ 继续' : '⏸ 暂停';
+}
+
+function toggleBackground() {
+  fetch('/api/background_toggle', { method: 'POST' });
+}
+
+function setBackground(ev, filename) {
+  ev.stopPropagation();
+  fetch('/api/background', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({file: filename}),
+  }).then(r => r.json()).then(data => {
+    if (data.error) toast(data.error);
+  });
+}
+
+function clearBackground() {
+  fetch('/api/background', { method: 'DELETE' });
+}
+
+function updateBgUI(filename) {
+  const indicator = document.getElementById('bgIndicator');
+  if (filename) {
+    document.getElementById('bgName').textContent = filename;
+    indicator.style.display = 'inline';
+  } else {
+    indicator.style.display = 'none';
+  }
+}
+
+function openFolder() {
+  fetch('/api/media');
+  toast('媒体文件目录: ' + window.location.origin + '/media/');
+}
+
+async function deleteFile(ev, path) {
+  ev.stopPropagation();
+  if (!confirm(`删除 ${path}？`)) return;
+  await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: path }) });
+  if (currentPlaying === path) { currentPlaying = null; document.getElementById('currentFile').textContent = '无'; document.getElementById('playIndicator').className = 'indicator'; }
+  await loadMedia();
+  toast('已删除');
+}
+
+function uploadFiles(files) {
+  const wrap = document.getElementById('uploadProgressWrap');
+  const bar = document.getElementById('uploadProgressBar');
+  const pct = document.getElementById('uploadPercent');
+  const status = document.getElementById('uploadStatus');
+
+  const fileArr = Array.from(files);
+  const hasPpt = fileArr.some(f => /\.(pptx|ppt)$/i.test(f.name));
+
+  function doUpload(pptAction) {
+    const filtered = fileArr.filter(f => {
+      if (/\.(pptx|ppt)$/i.test(f.name)) return pptAction === 'com';
+      return true;
+    });
+    if (filtered.length === 0) {
+      toast('没有文件需要上传');
+      loadMedia();
+      return;
+    }
+    if (pptAction === 'skip') {
+      toast('已跳过 PPT 文件，请将 PPT 另存为 PDF 后重新上传');
+    }
+
+    let done = 0;
+    const totalSize = filtered.reduce((s, f) => s + f.size, 0);
+
+    function uploadOne(index) {
+      if (index >= filtered.length) {
+        wrap.style.display = 'none';
+        toast('上传完成');
+        loadMedia();
+        return;
+      }
+      const file = filtered[index];
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          const p = Math.round((done + e.loaded) / totalSize * 100);
+          bar.style.width = p + '%';
+          pct.textContent = p + '%';
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          const resp = JSON.parse(xhr.responseText);
+          if (resp.convert_warning) {
+            toast(resp.convert_warning);
+          }
+          done += file.size;
+          const p = Math.round(done / totalSize * 100);
+          bar.style.width = p + '%';
+          pct.textContent = p + '%';
+          status.textContent = `${file.name} 完成`;
+          uploadOne(index + 1);
+        } else {
+          wrap.style.display = 'none';
+          toast('上传失败: ' + file.name);
+          loadMedia();
+        }
+      };
+
+      xhr.onerror = function() {
+        wrap.style.display = 'none';
+        toast('上传失败: ' + file.name);
+        loadMedia();
+      };
+
+      status.textContent = `正在上传 ${file.name}...`;
+      xhr.send(fd);
+    }
+
+    wrap.style.display = 'block';
+    bar.style.width = '0%';
+    pct.textContent = '0%';
+    uploadOne(0);
+  }
+
+  if (hasPpt) {
+    const dlg = document.getElementById('pptDialog');
+    dlg.style.display = 'flex';
+    document.getElementById('pptBtnHave').onclick = () => { dlg.style.display = 'none'; doUpload('com'); };
+    document.getElementById('pptBtnNot').onclick = () => { dlg.style.display = 'none'; doUpload('skip'); };
+    document.getElementById('pptBtnCancel').onclick = () => { dlg.style.display = 'none'; loadMedia(); };
+  } else {
+    doUpload(null);
+  }
+}
+
+// Upload handlers
+document.getElementById('uploadInput').addEventListener('change', function() {
+  if (this.files.length) uploadFiles(this.files);
+  this.value = '';
+});
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); uploadFiles(e.dataTransfer.files); });
+dz.addEventListener('click', () => document.getElementById('uploadInput').click());
+
+// Filter handlers
+document.getElementById('filters').addEventListener('click', e => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentFilter = btn.dataset.filter;
+  renderMedia();
+});
+
+function pptxPrev() {
+  if (pptxState.current <= 0) return;
+  pptxState.current--;
+  document.getElementById('pptxPage').textContent = `${pptxState.current + 1} / ${pptxState.total}`;
+  fetch('/api/pptx_nav', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slide: pptxState.current}),
+  });
+}
+
+function pptxNext() {
+  if (pptxState.current >= pptxState.total - 1) return;
+  pptxState.current++;
+  document.getElementById('pptxPage').textContent = `${pptxState.current + 1} / ${pptxState.total}`;
+  fetch('/api/pptx_nav', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slide: pptxState.current}),
+  });
+}
+
+function pptxGoTo() {
+  const inp = document.getElementById('pptxGoto');
+  const n = parseInt(inp.value);
+  if (isNaN(n) || n < 1 || n > pptxState.total) return;
+  pptxState.current = n - 1;
+  document.getElementById('pptxPage').textContent = `${n} / ${pptxState.total}`;
+  fetch('/api/pptx_nav', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slide: pptxState.current}),
+  });
+  inp.value = '';
+}
+
+// --- Progress bar ---
+
+let isDragging = false;
+
+function fmtTime(s) {
+  if (!s || s < 0) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function updateProgress(currentTime, duration, paused) {
+  const wrap = document.getElementById('progressWrap');
+  if (!duration || duration <= 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  document.getElementById('progressTime').textContent = fmtTime(currentTime);
+  document.getElementById('progressDuration').textContent = fmtTime(duration);
+  const pct = Math.min((currentTime / duration) * 100, 100);
+  if (!isDragging) {
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressThumb').style.left = pct + '%';
+  }
+}
+
+const track = document.getElementById('progressTrack');
+
+track.addEventListener('mousedown', function(e) {
+  isDragging = true;
+  seekFromEvent(e);
+});
+
+document.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  seekFromEvent(e);
+});
+
+document.addEventListener('mouseup', function() {
+  if (isDragging) {
+    isDragging = false;
+    // Seek to position when drag ends
+    const pct = parseFloat(document.getElementById('progressFill').style.width) / 100;
+    const durText = document.getElementById('progressDuration').textContent;
+    const parts = durText.split(':');
+    const dur = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    if (dur > 0) sendSeek(pct * dur);
+  }
+});
+
+function seekFromEvent(e) {
+  const rect = track.getBoundingClientRect();
+  let pct = (e.clientX - rect.left) / rect.width;
+  pct = Math.max(0, Math.min(1, pct));
+  document.getElementById('progressFill').style.width = (pct * 100) + '%';
+  document.getElementById('progressThumb').style.left = (pct * 100) + '%';
+}
+
+function sendSeek(time) {
+  fetch('/api/seek', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({time: time}),
+  });
+}
+
+track.addEventListener('click', function(e) {
+  const rect = track.getBoundingClientRect();
+  let pct = (e.clientX - rect.left) / rect.width;
+  pct = Math.max(0, Math.min(1, pct));
+  const durText = document.getElementById('progressDuration').textContent;
+  const parts = durText.split(':');
+  const dur = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  sendSeek(pct * dur);
+});
+
+// SSE for control panel
+function connectControlSSE() {
+  const evtSource = new EventSource('/events');
+  evtSource.onmessage = function(event) {
+    try {
+      const cmd = JSON.parse(event.data);
+      if (cmd.action === 'progress') {
+        updateProgress(cmd.currentTime, cmd.duration, cmd.paused);
+        if (cmd.paused !== undefined && cmd.paused !== isPaused) {
+          isPaused = cmd.paused;
+          document.getElementById('btnPause').textContent = isPaused ? '▶ 继续' : '⏸ 暂停';
+        }
+      } else if (cmd.action === 'play') {
+        if (cmd.slideCount && cmd.slideImage) {
+          previewBaseUrl = `/pptx_cache/${encodeURIComponent(cmd.file.replace(/\.(pptx|ppt|pdf)$/i, ''))}/slide_`;
+          updatePreview(cmd.slideImage, 'image');
+        } else if (cmd.type === 'video') {
+          updatePreview(cmd.path, 'video');
+        } else if (cmd.type === 'image') {
+          updatePreview(cmd.path, 'image');
+        } else if (cmd.type === 'audio') {
+          updatePreview(null, null);
+        }
+        if (cmd.slideCount && cmd.file === currentPlaying) {
+          pptxState.total = cmd.slideCount;
+          pptxState.current = cmd.slideIndex || 0;
+          document.getElementById('pptxNav').style.display = 'flex';
+          document.getElementById('pptxPage').textContent = `${(cmd.slideIndex || 0) + 1} / ${cmd.slideCount}`;
+        }
+      } else if (cmd.action === 'background_set') {
+        updateBgUI(cmd.file);
+        bgVisible = true;
+        const btn = document.getElementById('btnBgToggle');
+        btn.textContent = '🖼 背景';
+        btn.style.background = '#2563eb';
+      } else if (cmd.action === 'background_clear') {
+        updateBgUI(null);
+      } else if (cmd.action === 'background_toggle') {
+        const btn = document.getElementById('btnBgToggle');
+        bgVisible = !bgVisible;
+        btn.textContent = bgVisible ? '🖼 背景' : '🖼 隐藏背景';
+        btn.style.background = bgVisible ? '#2563eb' : '#4b5563';
+      } else if (cmd.action === 'pptx_nav') {
+        if (previewBaseUrl) {
+          updatePreview(previewBaseUrl + cmd.slideIndex + '.png', 'image');
+        }
+      } else if (cmd.action === 'stop') {
+        document.getElementById('pptxNav').style.display = 'none';
+        updatePreview(null, null);
+      }
+    } catch {}
+  };
+  evtSource.onerror = function() {
+    setTimeout(connectControlSSE, 3000);
+  };
+}
+
+connectControlSSE();
+loadMedia();
+setInterval(loadMedia, 10000);
+fetch('/api/background').then(r => r.json()).then(d => { if (d.file) updateBgUI(d.file); });
+</script>
+</body>
+</html>
