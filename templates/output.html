@@ -71,6 +71,27 @@ let pptxState = { slideIndex: 0, slideCount: 0, baseUrl: '' };
 let progressTimer = null;
 let backgroundFile = null;
 let bgVisible = true;
+let displayMode = 'contain';
+
+function applyDisplayMode(mode) {
+  displayMode = mode;
+  if (!mediaEl) return;
+  if (mediaEl.tagName === 'IMG' || mediaEl.tagName === 'VIDEO') {
+    if (mode === 'contain') {
+      mediaEl.style.width = '';
+      mediaEl.style.height = '';
+      mediaEl.style.objectFit = 'contain';
+      mediaEl.style.maxWidth = '100%';
+      mediaEl.style.maxHeight = '100%';
+    } else {
+      mediaEl.style.maxWidth = '';
+      mediaEl.style.maxHeight = '';
+      mediaEl.style.width = '100%';
+      mediaEl.style.height = '100%';
+      mediaEl.style.objectFit = mode;
+    }
+  }
+}
 
 let cursorTimer = null;
 function resetCursorHide() {
@@ -205,6 +226,7 @@ function preloadAndShow(data) {
       inactive.appendChild(img);
       showScreen(inactive);
       mediaEl = img;
+      applyDisplayMode(displayMode);
       showOverlay(data.file, '图片');
     };
     preloader.onerror = () => {
@@ -212,6 +234,7 @@ function preloadAndShow(data) {
       inactive.appendChild(img);
       showScreen(inactive);
       mediaEl = img;
+      applyDisplayMode(displayMode);
     };
     preloader.src = fileUrl;
   } else if (data.type === 'video') {
@@ -224,6 +247,7 @@ function preloadAndShow(data) {
     inactive.appendChild(vid);
     showScreen(inactive);
     mediaEl = vid;
+    applyDisplayMode(displayMode);
     vid.addEventListener('loadedmetadata', () => {
       const p = vid.play();
       if (p) p.catch(e => {
@@ -272,6 +296,7 @@ function preloadAndShow(data) {
         inactive.appendChild(img);
         showScreen(inactive);
         mediaEl = img;
+        applyDisplayMode(displayMode);
         const label = data.subtype === 'ppt' ? 'PPT' : 'PDF';
         showOverlay(data.file, `${label} ${pptxState.slideIndex + 1}/${pptxState.slideCount}`);
       };
@@ -375,6 +400,9 @@ function handleCommand(cmd) {
       bgVisible = !bgVisible;
       document.getElementById('background').style.display = bgVisible ? '' : 'none';
       showOverlay(currentMedia || '演示', bgVisible ? '背景已显示' : '背景已隐藏');
+      break;
+    case 'display_mode':
+      applyDisplayMode(cmd.mode);
       break;
     case 'pptx_nav':
       if (pptxState.slideCount === 0 || !pptxState.baseUrl) break;

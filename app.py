@@ -37,6 +37,9 @@ sse_lock = threading.Lock()
 BACKGROUND_FILE = MEDIA_DIR / '.background.json'
 current_background = None
 
+DISPLAY_MODE_FILE = MEDIA_DIR / '.display_mode.json'
+current_display_mode = 'contain'
+
 def _load_background():
     global current_background
     if BACKGROUND_FILE.exists():
@@ -57,7 +60,25 @@ def _save_background(filename=None):
     else:
         BACKGROUND_FILE.unlink(missing_ok=True)
 
+def _load_display_mode():
+    global current_display_mode
+    if DISPLAY_MODE_FILE.exists():
+        try:
+            with open(DISPLAY_MODE_FILE) as f:
+                d = json.load(f)
+                mode = d.get('mode', 'contain')
+                if mode in ('contain', 'cover', 'fill'):
+                    current_display_mode = mode
+        except Exception:
+            pass
+
+def _save_display_mode(mode):
+    global current_display_mode
+    current_display_mode = mode
+    DISPLAY_MODE_FILE.write_text(json.dumps({'mode': mode}, ensure_ascii=False), encoding='utf-8')
+
 _load_background()
+_load_display_mode()
 
 MEDIA_EXTENSIONS = {
     'image': ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico'),
@@ -296,6 +317,18 @@ def api_background_toggle():
     broadcast({'action': 'background_toggle'})
     return jsonify({'ok': True})
 
+@app.route('/api/display_mode', methods=['GET', 'POST'])
+def api_display_mode():
+    if request.method == 'GET':
+        return jsonify({'mode': current_display_mode})
+    data = request.get_json()
+    mode = (data or {}).get('mode', 'contain')
+    if mode not in ('contain', 'cover', 'fill'):
+        return jsonify({'error': 'invalid mode'}), 400
+    _save_display_mode(mode)
+    broadcast({'action': 'display_mode', 'mode': mode})
+    return jsonify({'ok': True, 'mode': mode})
+
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
     broadcast({'action': 'stop'})
@@ -382,6 +415,7 @@ def events():
         try:
             if current_background:
                 yield 'data: ' + json.dumps({'action': 'background_set', 'file': current_background}) + '\n\n'
+            yield 'data: ' + json.dumps({'action': 'display_mode', 'mode': current_display_mode}) + '\n\n'
             while True:
                 try:
                     cmd = q.get(timeout=30)
