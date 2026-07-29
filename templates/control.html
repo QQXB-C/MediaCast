@@ -129,6 +129,10 @@ header h1 { font-size: 22px; font-weight: 600; }
       <button class="btn-pause" id="btnPause" onclick="sendPause()">⏸ 暂停</button>
       <button id="btnBgToggle" onclick="toggleBackground()" style="padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;background:#2563eb;color:#fff;transition:all .2s;">🖼 背景</button>
       <button id="btnPreview" onclick="togglePreview()" style="padding:6px 10px;border:none;border-radius:4px;cursor:pointer;font-size:12px;background:#374151;color:#fff;">📺</button>
+      <span style="color:#555;margin:0 2px;">|</span>
+      <button class="mode-btn active" data-mode="contain" onclick="setDisplayMode('contain')" title="自适应完整显示" style="padding:4px 8px;border:1px solid #444;border-radius:4px;background:transparent;color:#888;cursor:pointer;font-size:11px;">⊞ 自适应</button>
+      <button class="mode-btn" data-mode="cover" onclick="setDisplayMode('cover')" title="裁剪填充屏幕" style="padding:4px 8px;border:1px solid #444;border-radius:4px;background:transparent;color:#888;cursor:pointer;font-size:11px;">⊟ 裁剪</button>
+      <button class="mode-btn" data-mode="fill" onclick="setDisplayMode('fill')" title="拉伸填满" style="padding:4px 8px;border:1px solid #444;border-radius:4px;background:transparent;color:#888;cursor:pointer;font-size:11px;">⛶ 拉伸</button>
     </div>
   </div>
 
@@ -347,6 +351,26 @@ function sendPause() {
 
 function toggleBackground() {
   fetch('/api/background_toggle', { method: 'POST' });
+}
+
+let currentDisplayMode = 'contain';
+
+function setDisplayMode(mode) {
+  fetch('/api/display_mode', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mode: mode}),
+  });
+}
+
+function updateModeUI(mode) {
+  currentDisplayMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+    b.style.background = b.dataset.mode === mode ? '#0f3460' : 'transparent';
+    b.style.color = b.dataset.mode === mode ? '#fff' : '#888';
+    b.style.borderColor = b.dataset.mode === mode ? '#0f3460' : '#444';
+  });
 }
 
 function setBackground(ev, filename) {
@@ -660,6 +684,8 @@ function connectControlSSE() {
         if (previewBaseUrl) {
           updatePreview(previewBaseUrl + cmd.slideIndex + '.png', 'image');
         }
+      } else if (cmd.action === 'display_mode') {
+        updateModeUI(cmd.mode);
       } else if (cmd.action === 'stop') {
         document.getElementById('pptxNav').style.display = 'none';
         updatePreview(null, null);
@@ -675,6 +701,7 @@ connectControlSSE();
 loadMedia();
 setInterval(loadMedia, 10000);
 fetch('/api/background').then(r => r.json()).then(d => { if (d.file) updateBgUI(d.file); });
+fetch('/api/display_mode').then(r => r.json()).then(d => { if (d.mode) updateModeUI(d.mode); });
 </script>
 </body>
 </html>
