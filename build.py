@@ -27,8 +27,9 @@ def build():
     readme = media_dir / '将媒体文件放入此文件夹.txt'
     readme.write_text('将图片、视频、音频、PDF 文件放入此文件夹', encoding='utf-8')
 
+    exe_name = 'MediaController.exe' if sys.platform == 'win32' else 'MediaController'
     print(f'\nBuild complete: {DIST}')
-    print(f'  Run: {DIST / "MediaController.exe"}')
+    print(f'  Run: {DIST / exe_name}')
 
     total_size = sum(os.path.getsize(os.path.join(r, f)) for r,_,fs in os.walk(DIST) for f in fs)
     print(f'  Total size: {total_size/1024/1024:.0f}M')
